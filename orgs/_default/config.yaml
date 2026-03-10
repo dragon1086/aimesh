@@ -1,0 +1,26 @@
+org_id: default
+org_name: "Default Organization"
+
+telegram:
+  group_chat_id: 0
+  admin_user_ids: []
+
+agents:
+  - id: "coder-1"
+    type: "coder"
+    soul_file: "souls/coder.md"
+    capabilities: ["code", "implement", "fix", "refactor"]
+    model: "sonnet"
+    max_budget_usd: 5.0
+  - id: "researcher-1"
+    type: "researcher"
+    soul_file: "souls/researcher.md"
+    capabilities: ["research", "analyze", "compare"]
+    model: "sonnet"
+    max_budget_usd: 3.0
+
+pm:
+  model: "claude-sonnet-4-20250514"
+  tools_enabled: true
+
+workspace_path: "./workspace"
