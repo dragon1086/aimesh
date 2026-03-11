@@ -45,6 +45,7 @@ class TelegramBot:
         self._app.add_handler(CommandHandler("cancel", self._on_cancel))
         self._app.add_handler(CommandHandler("approve", self._on_approve))
         self._app.add_handler(CommandHandler("reject", self._on_reject))
+        self._app.add_handler(CommandHandler("addteam", self._on_addteam))
 
         # Register NL handler (lower priority than command handlers)
         if self.nl_handler is not None:
@@ -109,4 +110,12 @@ class TelegramBot:
         task_id = context.args[0] if context.args else ""
         feedback = " ".join(context.args[1:]) if len(context.args) > 1 else ""
         response = await self.handlers.handle_reject(update.effective_user.id, task_id, feedback)
+        await update.message.reply_text(response, parse_mode="MarkdownV2")
+
+    async def _on_addteam(self, update, context) -> None:
+        text = " ".join(context.args) if context.args else ""
+        chat_id = update.effective_chat.id if update.effective_chat else 0
+        response = await self.handlers.handle_addteam(
+            update.effective_user.id, text, chat_id,
+        )
         await update.message.reply_text(response, parse_mode="MarkdownV2")

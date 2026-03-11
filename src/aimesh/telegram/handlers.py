@@ -3,6 +3,10 @@
 import structlog
 
 from aimesh.agents.pm import PMAgent
+from aimesh.config import (
+    AgentEntry, OrgConfig, ORGS_DIR,
+    PMConfig, TelegramOrgConfig, save_org_config,
+)
 from aimesh.core.message import MeshMessage, MessageType
 from aimesh.core.registry import AgentRegistry
 from aimesh.tasks.tracker import TaskTracker
@@ -105,3 +109,101 @@ class CommandHandlers:
         if result:
             return f"Task {task_id} rejected\\. Sent for rework\\."
         return f"Cannot reject task {task_id}\\. Not in REVIEW state\\."
+
+    async def handle_addteam(
+        self, user_id: int, text: str, chat_id: int, engine: str = ""
+    ) -> str:
+        """Handle /addteam command — create a new team from group chat.
+
+        Usage: /addteam <name> [engine]
+        Engine: claude_code (default), codex, gemini, anthropic
+        """
+        if not self._is_admin(user_id):
+            return "Unauthorized\\. Only admins can add teams\\."
+
+        parts = text.strip().split()
+        if not parts:
+            return (
+                "Usage: /addteam <name> [engine]\n"
+                "Engine: claude\\_code \\(default\\), codex, gemini, anthropic"
+            )
+
+        team_name = parts[0]
+        engine_choice = parts[1] if len(parts) > 1 else (engine or "claude_code")
+
+        valid_engines = {"claude_code", "codex", "gemini", "anthropic"}
+        if engine_choice not in valid_engines:
+            return f"Invalid engine: {engine_choice}\\. Choose from: {', '.join(sorted(valid_engines))}"
+
+        # Sanitize org_id (ASCII only)
+        org_id = team_name.lower().replace(" ", "-").replace("_", "-")
+        org_id = "".join(c for c in org_id if c.isascii() and (c.isalnum() or c == "-"))
+        if not org_id:
+            return "Team name must contain at least one ASCII letter or number\\."
+
+        # Check if org already exists
+        org_dir = ORGS_DIR / org_id
+        if (org_dir / "config.yaml").exists():
+            return f"Team '{org_id}' already exists\\. Edit orgs/{org_id}/config\\.yaml to modify\\."
+
+        # Default agent roster
+        default_capabilities = {
+            "coder": ["code", "implement", "fix", "refactor"],
+            "researcher": ["research", "analyze", "compare"],
+        }
+        agent_entries = []
+        for i, agent_type in enumerate(["coder", "researcher"], 1):
+            agent_entries.append(AgentEntry(
+                id=f"{agent_type}-{i}",
+                type=agent_type,
+                soul_file=f"souls/{agent_type}.md",
+                capabilities=default_capabilities.get(agent_type, [agent_type]),
+                model="sonnet",
+                max_budget_usd=5.0,
+            ))
+
+        config = OrgConfig(
+            org_id=org_id,
+            org_name=team_name,
+            telegram=TelegramOrgConfig(
+                group_chat_id=chat_id,
+                admin_user_ids=[user_id],
+            ),
+            agents=agent_entries,
+            pm=PMConfig(engine=engine_choice),
+            workspace_path="./workspace",
+        )
+
+        try:
+            save_org_config(config)
+
+            # Create default soul files
+            soul_dir = org_dir / "souls"
+            soul_dir.mkdir(parents=True, exist_ok=True)
+
+            org_soul = org_dir / "soul.md"
+            if not org_soul.exists():
+                org_soul.write_text(
+                    f"You are the PM for team '{team_name}'.\n",
+                    encoding="utf-8",
+                )
+
+            for agent_type in ["coder", "researcher"]:
+                agent_soul = soul_dir / f"{agent_type}.md"
+                if not agent_soul.exists():
+                    agent_soul.write_text(
+                        f"You are a {agent_type} agent for team '{team_name}'.\n",
+                        encoding="utf-8",
+                    )
+
+            logger.info("team_added", org_id=org_id, engine=engine_choice, user_id=user_id)
+            return (
+                f"Team '{team_name}' created\\!\n\n"
+                f"Config: orgs/{org_id}/config\\.yaml\n"
+                f"Engine: {engine_choice}\n"
+                f"Agents: coder\\-1, researcher\\-1\n\n"
+                f"Restart the bot to activate this team\\."
+            )
+        except Exception as e:
+            logger.error("team_add_failed", error=str(e), org_id=org_id)
+            return f"Error creating team: {str(e)}"
