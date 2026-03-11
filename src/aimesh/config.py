@@ -116,6 +116,8 @@ class OrgConfig(BaseModel):
     pm: PMConfig = PMConfig()
     engine_config: EngineConfig = EngineConfig()
     workspace_path: str = "./workspace"
+    domain: str = ""  # e.g., "development", "marketing", "design"
+    domain_keywords: list[str] = []  # Keywords that indicate this PM's domain
 
     def load_soul_prompt(self, agent_entry: AgentEntry, org_dir: Path) -> str:
         """Load soul prompt for an agent. Falls back to org-level soul.md."""

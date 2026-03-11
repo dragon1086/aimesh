@@ -17,7 +17,11 @@ from aimesh.telegram.formatter import format_message
 logger = structlog.get_logger("display")
 
 # Message types that bypass debounce (always sent immediately)
-PRIORITY_TYPES = {MessageType.RESULT, MessageType.TASK_ASSIGN, MessageType.REVIEW_REQUEST}
+PRIORITY_TYPES = {
+    MessageType.RESULT, MessageType.TASK_ASSIGN, MessageType.REVIEW_REQUEST,
+    MessageType.HAND_RAISE, MessageType.COLLAB_REQUEST,
+    MessageType.COLLAB_ACCEPT, MessageType.COLLAB_RESULT,
+}
 
 DEBOUNCE_SECONDS = 5.0
 

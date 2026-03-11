@@ -41,7 +41,6 @@ class TmuxPMOrchestrator:
     Delegates NL understanding and task decomposition to tmux PM via HybridBridge.
     """
 
-    agent_id: str = "pm"
     agent_type: str = "pm"
 
     def __init__(
@@ -56,7 +55,11 @@ class TmuxPMOrchestrator:
         data_dir: str = "data/pm",
         review_timeout_minutes: int = 30,
         completion_check_timeout: float = 60.0,
+        agent_id: str = "pm",
+        collab_manager: object | None = None,
     ) -> None:
+        self.agent_id = agent_id
+        self._collab_manager = collab_manager
         self.bus = bus
         self.registry = registry
         self.tracker = tracker
@@ -148,6 +151,8 @@ class TmuxPMOrchestrator:
             await self._handle_completion_confirm(message)
         elif message.msg_type == MessageType.CHAT:
             await self._handle_chat(message)
+        elif message.msg_type == MessageType.COLLAB_RESULT:
+            await self._handle_collab_result(message)
         else:
             logger.debug("orchestrator_ignored_message", msg_type=message.msg_type.value)
 
@@ -178,6 +183,12 @@ class TmuxPMOrchestrator:
 
     async def _outbox_callback(self, pm_id: str, response: dict) -> None:
         """Called by HybridBridge when a new outbox response file is found."""
+        # Check if this is a collaboration request from the tmux PM
+        resp_type = response.get("type", "")
+        if resp_type == "collab_request" and self._collab_manager is not None:
+            await self._emit_collab_request(response)
+            return
+
         reply_to = response.get("reply_to", "")
         if reply_to and reply_to in self._pending_responses:
             future = self._pending_responses.pop(reply_to)
@@ -190,6 +201,27 @@ class TmuxPMOrchestrator:
                 reply_to=reply_to,
                 response_id=response.get("id"),
             )
+
+    async def _emit_collab_request(self, response: dict) -> None:
+        """Convert a tmux PM's outbox collab_request into a bus message."""
+        msg = MeshMessage(
+            sender=self.agent_id,
+            recipient="collab_manager",
+            msg_type=MessageType.COLLAB_REQUEST,
+            content=response.get("request", ""),
+            metadata={
+                "request": response.get("request", ""),
+                "context": response.get("context", ""),
+                "required_domain": response.get("required_domain", ""),
+                "original_task_id": response.get("original_task_id", ""),
+            },
+        )
+        await self.bus.publish(msg)
+        logger.info(
+            "collab_request_emitted",
+            pm=self.agent_id,
+            request=response.get("request", "")[:100],
+        )
 
     async def _wait_for_outbox_response(
         self, msg_id: str, timeout: float = 30.0
@@ -612,6 +644,30 @@ class TmuxPMOrchestrator:
 
         if check.expected_agents <= set(check.confirmations.keys()):
             check.event.set()
+
+    async def _handle_collab_result(self, message: MeshMessage) -> None:
+        """Handle collaboration result from another PM.
+
+        Injects the result into the tmux PM session so it can integrate.
+        """
+        collab_id = message.metadata.get("collab_id", "")
+        helper_org = message.metadata.get("helper_org", message.sender)
+
+        inject_prompt = (
+            f"[COLLAB-RESULT from {helper_org} (collab_id={collab_id})]\n\n"
+            f"{message.content}\n\n"
+            "위 협업 결과를 반영하여 작업을 계속 진행해주세요."
+        )
+
+        try:
+            await self._bridge.send_to_pm(
+                pm_id=self.pm_id,
+                session_name=self.session_name,
+                prompt_text=inject_prompt,
+            )
+            logger.info("collab_result_injected", collab_id=collab_id, pm=self.agent_id)
+        except Exception as e:
+            logger.error("collab_result_inject_failed", error=str(e), collab_id=collab_id)
 
     async def _handle_status_update(self, message: MeshMessage) -> None:
         """Track worker progress updates."""

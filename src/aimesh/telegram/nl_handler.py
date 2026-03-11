@@ -29,12 +29,14 @@ class NaturalLanguageHandler:
         context: ConversationContext,
         handlers: CommandHandlers,
         bot_username: str | None = None,
+        collab_manager: object | None = None,
     ) -> None:
         self.bus = bus
         self.tracker = tracker
         self.context = context
         self.handlers = handlers
         self.bot_username = bot_username
+        self.collab_manager = collab_manager
         self._pending_responses: dict[str, asyncio.Future] = {}
 
     async def handle_message(self, update, tg_context) -> None:
@@ -80,8 +82,16 @@ class NaturalLanguageHandler:
             self._add_bot_response(chat_id, response)
             return
 
-        # Forward to PM as CHAT message
-        response = await self._forward_to_pm(text, chat_id, user_id, user_name)
+        # Forward to PM (multi-PM via CollaborationManager, or single PM directly)
+        if self.collab_manager is not None:
+            from aimesh.collaboration.manager import CollaborationManager
+            mgr: CollaborationManager = self.collab_manager  # type: ignore[assignment]
+            conversation_context = self.context.format_for_pm(chat_id)
+            response = await mgr.route_chat(
+                text, chat_id, user_id, user_name, conversation_context,
+            )
+        else:
+            response = await self._forward_to_pm(text, chat_id, user_id, user_name)
         if response:
             await update.message.reply_text(response)
             self._add_bot_response(chat_id, response)

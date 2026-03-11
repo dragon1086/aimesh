@@ -59,6 +59,18 @@ def format_message(message: MeshMessage) -> str:
     elif message.msg_type == MessageType.SYSTEM:
         return f"{prefix} _{_escape_md(message.content)}_"
 
+    elif message.msg_type == MessageType.HAND_RAISE:
+        return f"{prefix} {_escape_md(message.content)}"
+
+    elif message.msg_type == MessageType.COLLAB_REQUEST:
+        return f"{prefix} {_escape_md(message.content)}"
+
+    elif message.msg_type == MessageType.COLLAB_ACCEPT:
+        return f"{prefix} {_escape_md(message.content)}"
+
+    elif message.msg_type == MessageType.COLLAB_RESULT:
+        return f"{prefix} {_escape_md(message.content[:500])}"
+
     return f"{prefix} {_escape_md(message.content[:300])}"
 
 

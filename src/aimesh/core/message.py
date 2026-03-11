@@ -21,6 +21,12 @@ class MessageType(Enum):
     COMPLETION_CONFIRM = "completion_confirm"
     CHAT = "chat"  # Natural language message forwarded to PM for classification
 
+    # Inter-PM collaboration
+    HAND_RAISE = "hand_raise"          # PM claims a user task
+    COLLAB_REQUEST = "collab_request"  # PM requests help from another PM
+    COLLAB_ACCEPT = "collab_accept"    # PM volunteers to help
+    COLLAB_RESULT = "collab_result"    # PM returns collaboration result
+
 
 class MessageStatus(Enum):
     """Delivery status of a message."""
