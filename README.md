@@ -123,6 +123,7 @@ Set `pm.engine` in your org config. The PM runs as a real CLI process in a tmux 
 | `/approve <task_id>` | Approve a completed task |
 | `/reject <task_id> [feedback]` | Reject and request rework |
 | `/cancel <task_id>` | Cancel a task |
+| `/addteam <name> [engine]` | Add a new team (admin only) |
 
 You can also chat naturally — the NL handler routes messages to the PM automatically.
 
