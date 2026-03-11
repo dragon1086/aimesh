@@ -33,12 +33,18 @@ Telegram Group Chat
 ## Quick Start
 
 ```bash
-# 1. Clone and install
+# 1. Clone
 git clone <repo-url>
 cd aimesh
+
+# 2. Create virtual environment
+python3 -m venv .venv
+source .venv/bin/activate  # Windows: .venv\Scripts\activate
+
+# 3. Install
 pip install -e ".[dev]"
 
-# 2. Run (setup wizard starts automatically on first run)
+# 4. Run (setup wizard starts automatically on first run)
 python -m aimesh.main
 ```
 
