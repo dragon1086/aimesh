@@ -90,12 +90,18 @@ def _detect_available_engines() -> dict[str, bool]:
     }
 
 
+def _sanitize_text(text: str) -> str:
+    """Remove surrogate characters from terminal input."""
+    return text.encode("utf-8", errors="replace").decode("utf-8")
+
+
 class CLISetupWizard:
     """Interactive terminal wizard for first-run AI Mesh setup."""
 
     def __init__(self, input_fn=None, getpass_fn=None):
         """Initialize wizard with optional input function overrides for testing."""
-        self._input = input_fn or input
+        raw_input = input_fn or input
+        self._input = lambda prompt: _sanitize_text(raw_input(prompt))
         self._getpass = getpass_fn or getpass.getpass
 
     async def run(self) -> list[TeamSetup]:
