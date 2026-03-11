@@ -1,52 +1,58 @@
-"""Tests for v3 config additions and SDK executor swap."""
+"""Tests for v3 config additions and engine selection."""
 
-from aimesh.config import PMConfig, OrgConfig
-
-
-# --- PMConfig engine_type Tests ---
+from aimesh.config import PMConfig, OrgConfig, EngineConfig
 
 
-def test_pm_config_default_engine_type():
-    """PMConfig defaults to 'anthropic' engine_type."""
+# --- PMConfig engine Tests ---
+
+
+def test_pm_config_default_engine():
+    """PMConfig defaults to 'claude_code' engine."""
     config = PMConfig()
-    assert config.engine_type == "anthropic"
+    assert config.engine == "claude_code"
 
 
-def test_pm_config_claude_sdk_engine():
-    """PMConfig accepts 'claude_sdk' engine_type."""
-    config = PMConfig(engine_type="claude_sdk")
-    assert config.engine_type == "claude_sdk"
+def test_pm_config_codex_engine():
+    """PMConfig accepts 'codex' engine."""
+    config = PMConfig(engine="codex")
+    assert config.engine == "codex"
 
 
-def test_pm_config_tmux_engine():
-    """PMConfig accepts 'tmux' engine_type."""
-    config = PMConfig(engine_type="tmux")
-    assert config.engine_type == "tmux"
+def test_pm_config_gemini_engine():
+    """PMConfig accepts 'gemini' engine."""
+    config = PMConfig(engine="gemini")
+    assert config.engine == "gemini"
+
+
+def test_pm_config_anthropic_legacy():
+    """PMConfig accepts 'anthropic' for legacy API mode."""
+    config = PMConfig(engine="anthropic")
+    assert config.engine == "anthropic"
 
 
 def test_org_config_backward_compat():
-    """OrgConfig loads with default PMConfig (no engine_type in YAML)."""
+    """OrgConfig loads with default PMConfig (no engine in YAML)."""
     config = OrgConfig(org_id="test-org")
-    assert config.pm.engine_type == "anthropic"
+    assert config.pm.engine == "claude_code"
     assert config.pm.model == "claude-sonnet-4-20250514"
     assert config.pm.tools_enabled is True
 
 
-def test_org_config_with_engine_type():
-    """OrgConfig loads with engine_type specified."""
+def test_org_config_with_engine():
+    """OrgConfig loads with engine specified."""
     config = OrgConfig(
         org_id="test-org",
-        pm=PMConfig(engine_type="claude_sdk"),
+        pm=PMConfig(engine="codex"),
     )
-    assert config.pm.engine_type == "claude_sdk"
+    assert config.pm.engine == "codex"
 
 
 def test_org_config_save_load_roundtrip(tmp_path):
-    """OrgConfig with engine_type survives save/load cycle."""
+    """OrgConfig with engine survives save/load cycle."""
     import yaml
     config = OrgConfig(
         org_id="roundtrip-test",
-        pm=PMConfig(engine_type="claude_sdk", model="sonnet"),
+        pm=PMConfig(engine="codex", model="sonnet"),
     )
 
     # Save
@@ -62,44 +68,40 @@ def test_org_config_save_load_roundtrip(tmp_path):
         loaded_data = yaml.safe_load(f)
     loaded = OrgConfig(**loaded_data)
 
-    assert loaded.pm.engine_type == "claude_sdk"
+    assert loaded.pm.engine == "codex"
     assert loaded.pm.model == "sonnet"
 
 
-# --- main.py executor branching Tests ---
+# --- Engine config Tests ---
+
+
+def test_engine_config_get_command():
+    """EngineConfig returns correct command for each engine."""
+    ec = EngineConfig()
+    assert ec.get_command("claude_code") == "claude --dangerously-skip-permissions"
+    assert ec.get_command("codex") == "codex --full-auto"
+    assert ec.get_command("gemini") == "gemini-cli"
+
+
+def test_engine_config_unknown_fallback():
+    """EngineConfig falls back to claude_code for unknown engine."""
+    ec = EngineConfig()
+    assert ec.get_command("unknown") == "claude --dangerously-skip-permissions"
 
 
 def test_anthropic_branch_creates_tool_executor():
-    """engine_type 'anthropic' creates ToolUsingExecutor (v2.1 path)."""
+    """engine 'anthropic' creates ToolUsingExecutor (legacy path)."""
     from aimesh.agents.executor import AnthropicExecutor, ToolUsingExecutor
     from aimesh.agents.pm_tools import PM_TOOL_SCHEMAS, PMToolHandlers, create_pm_dispatcher
 
     pm_tool_handlers = PMToolHandlers()
     pm_dispatcher = create_pm_dispatcher(pm_tool_handlers)
 
-    config = PMConfig(engine_type="anthropic")
-    assert config.engine_type == "anthropic"
+    config = PMConfig(engine="anthropic")
+    assert config.engine == "anthropic"
 
     inner = AnthropicExecutor(model=config.model, api_key="test-key")
     executor = ToolUsingExecutor(
         inner=inner, tools=PM_TOOL_SCHEMAS, tool_dispatcher=pm_dispatcher,
     )
     assert isinstance(executor, ToolUsingExecutor)
-
-
-def test_claude_sdk_branch_creates_sdk_executor():
-    """engine_type 'claude_sdk' creates ClaudeAgentSDKExecutor (v2.5 path)."""
-    from aimesh.agents.executor import ClaudeAgentSDKExecutor
-
-    config = PMConfig(engine_type="claude_sdk")
-    assert config.engine_type == "claude_sdk"
-
-    executor = ClaudeAgentSDKExecutor(
-        model="sonnet",
-        system_prompt="You are the PM agent.",
-        permission_mode="acceptEdits",
-        max_turns=15,
-    )
-    assert isinstance(executor, ClaudeAgentSDKExecutor)
-    assert executor.model == "sonnet"
-    assert executor.max_turns == 15

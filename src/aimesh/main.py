@@ -13,7 +13,7 @@ from aimesh.core.context import ContextStore
 from aimesh.core.message import MeshMessage, MessageType
 from aimesh.core.logging import setup_logging
 from aimesh.core.registry import AgentRegistry
-from aimesh.agents.executor import AnthropicExecutor, ClaudeAgentSDKExecutor, ToolUsingExecutor
+from aimesh.agents.executor import AnthropicExecutor, ToolUsingExecutor
 from aimesh.agents.factory import AgentFactory
 from aimesh.agents.pm import PMAgent
 from aimesh.agents.pm_tools import PM_TOOL_SCHEMAS, PMToolHandlers, create_pm_dispatcher
@@ -83,23 +83,12 @@ async def run() -> None:
                      agent_type=agent_entry.type,
                      soul_file=agent_entry.soul_file or "org-level soul.md")
 
-    # Create PM executor based on engine_type
+    # Create PM based on engine setting
     pm_tool_handlers = PMToolHandlers()
     pm_dispatcher = create_pm_dispatcher(pm_tool_handlers)
 
-    if org_config.pm.engine_type == "claude_sdk":
-        # v2.5: ClaudeAgentSDKExecutor gives PM real tool access (file read, bash, etc.)
-        # PM-specific tools (spawn_agent, etc.) are not available — _handle_chat
-        # dispatches actions via Python methods, so this is fine.
-        pm_executor = ClaudeAgentSDKExecutor(
-            model=org_config.pm.model if "claude-" in org_config.pm.model else "sonnet",
-            system_prompt="You are the PM agent for an AI development team. When classifying user intents, respond in JSON.",
-            permission_mode="acceptEdits",
-            cwd=org_config.workspace_path,
-            max_turns=15,
-        )
-    else:
-        # v2.1 default: AnthropicExecutor + ToolUsingExecutor with PM tools
+    if org_config.pm.engine == "anthropic":
+        # Legacy: AnthropicExecutor + ToolUsingExecutor with PM tools (API-based)
         pm_inner_executor = AnthropicExecutor(
             model=org_config.pm.model,
             api_key=settings.anthropic_api_key or None,
@@ -109,8 +98,12 @@ async def run() -> None:
             tools=PM_TOOL_SCHEMAS,
             tool_dispatcher=pm_dispatcher,
         )
-
-    if org_config.pm.engine_type == "tmux":
+        pm = PMAgent(
+            bus=bus, executor=pm_executor, registry=registry, tracker=tracker,
+            review_timeout_minutes=settings.review_timeout_minutes,
+        )
+    else:
+        # v3: tmux-based PM — claude_code, codex, or gemini
         from aimesh.tmux.orchestrator import TmuxPMOrchestrator
         pm = TmuxPMOrchestrator(
             bus=bus,
@@ -118,12 +111,7 @@ async def run() -> None:
             tracker=tracker,
             pm_id=org_id,
             workspace=org_config.workspace_path,
-            engine_command=org_config.engine_config.get_command(org_config.pm.engine_type),
-        )
-    else:
-        pm = PMAgent(
-            bus=bus, executor=pm_executor, registry=registry, tracker=tracker,
-            review_timeout_minutes=settings.review_timeout_minutes,
+            engine_command=org_config.engine_config.get_command(org_config.pm.engine),
         )
 
     # Wire PM tool handlers with system references
@@ -222,9 +210,9 @@ async def run() -> None:
     # 6. Close context store
     await context_store.close()
 
-    # 7. Close executor clients
-    if hasattr(pm_executor, 'close'):
-        await pm_executor.close()
+    # 7. Close executor clients (only exists in legacy anthropic mode)
+    if hasattr(pm, 'executor') and hasattr(pm.executor, 'close'):
+        await pm.executor.close()
 
     logger.info("aimesh_shutdown_complete")
 

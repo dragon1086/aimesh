@@ -90,7 +90,7 @@ class PMConfig(BaseModel):
     """PM configuration."""
     model: str = "claude-sonnet-4-20250514"
     tools_enabled: bool = True
-    engine_type: str = "anthropic"  # "anthropic" | "claude_sdk" | "tmux"
+    engine: str = "claude_code"  # "claude_code" | "codex" | "gemini" | "anthropic" (legacy API)
 
 
 class TelegramOrgConfig(BaseModel):

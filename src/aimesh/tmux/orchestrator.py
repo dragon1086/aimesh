@@ -34,7 +34,7 @@ class _PendingCheck:
 
 
 class TmuxPMOrchestrator:
-    """Drop-in replacement for PMAgent when engine_type is 'tmux'.
+    """Drop-in replacement for PMAgent when engine is claude_code/codex/gemini.
 
     Subscribes to bus as agent_id='pm'. Retains all stateful logic
     (TaskTracker, AgentRegistry, completion protocol, asyncio.Future).

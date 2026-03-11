@@ -20,6 +20,7 @@ agents:
     max_budget_usd: 3.0
 
 pm:
+  engine: "claude_code"  # claude_code | codex | gemini | anthropic (legacy API)
   model: "claude-sonnet-4-20250514"
   tools_enabled: true
 
