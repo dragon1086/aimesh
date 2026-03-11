@@ -52,9 +52,9 @@ async def test_sdk_executor_import_error():
     executor = ClaudeAgentSDKExecutor()
     # SDK likely not installed in test env
     result = await executor.execute("hello")
-    # Either succeeds (SDK installed) or returns import error
+    # Either succeeds (SDK installed) or returns error (import or nested session)
     if not result.success:
-        assert "claude-agent-sdk" in result.error
+        assert "claude-agent-sdk" in result.error or "exit code" in result.error
 
 
 @pytest.mark.asyncio

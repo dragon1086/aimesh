@@ -70,10 +70,27 @@ class AgentEntry(BaseModel):
     max_budget_usd: float = 5.0
 
 
+class EngineConfig(BaseModel):
+    """Engine-specific spawn configuration."""
+    claude_code: str = "claude --dangerously-skip-permissions"
+    codex: str = "codex --full-auto"
+    gemini: str = "gemini-cli"
+
+    def get_command(self, engine_type: str) -> str:
+        """Get spawn command for engine type."""
+        commands = {
+            "claude_code": self.claude_code,
+            "codex": self.codex,
+            "gemini": self.gemini,
+        }
+        return commands.get(engine_type, self.claude_code)
+
+
 class PMConfig(BaseModel):
     """PM configuration."""
     model: str = "claude-sonnet-4-20250514"
     tools_enabled: bool = True
+    engine_type: str = "anthropic"  # "anthropic" | "claude_sdk" | "tmux"
 
 
 class TelegramOrgConfig(BaseModel):
@@ -97,6 +114,7 @@ class OrgConfig(BaseModel):
     telegram: TelegramOrgConfig = TelegramOrgConfig()
     agents: list[AgentEntry] = []
     pm: PMConfig = PMConfig()
+    engine_config: EngineConfig = EngineConfig()
     workspace_path: str = "./workspace"
 
     def load_soul_prompt(self, agent_entry: AgentEntry, org_dir: Path) -> str:
