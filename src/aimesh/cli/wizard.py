@@ -6,6 +6,7 @@ Produces the same OrgConfig format as the Telegram SetupWizard.
 
 import asyncio
 import getpass
+import shutil
 import sys
 from dataclasses import dataclass
 from pathlib import Path
@@ -27,6 +28,34 @@ logger = structlog.get_logger("cli_wizard")
 # Default agent roster (same as Telegram wizard)
 DEFAULT_AGENT_TYPES = ["coder", "researcher"]
 
+# Engine display info
+ENGINE_INFO = {
+    "claude_code": {
+        "name": "Claude Code",
+        "command": "claude",
+        "install": "npm install -g @anthropic-ai/claude-code",
+        "auth_hint": "Run 'claude' once to authenticate via OAuth",
+    },
+    "codex": {
+        "name": "Codex",
+        "command": "codex",
+        "install": "npm install -g @openai/codex",
+        "auth_hint": "Run 'codex' once to authenticate",
+    },
+    "gemini": {
+        "name": "Gemini CLI",
+        "command": "gemini-cli",
+        "install": "See https://github.com/google-gemini/gemini-cli",
+        "auth_hint": "Run 'gemini-cli' once to authenticate",
+    },
+    "anthropic": {
+        "name": "Anthropic API (legacy)",
+        "command": None,
+        "install": None,
+        "auth_hint": "Requires ANTHROPIC_API_KEY",
+    },
+}
+
 
 @dataclass
 class TeamSetup:
@@ -37,12 +66,28 @@ class TeamSetup:
     bot_token: str
     group_chat_id: int
     org_id: str  # Derived from name
+    engine: str = "claude_code"
 
 
 def _sanitize_org_id(name: str) -> str:
     """Convert team name to a valid org_id (same logic as Telegram wizard)."""
     org_id = name.lower().replace(" ", "-").replace("_", "-")
     return "".join(c for c in org_id if c.isalnum() or c == "-")
+
+
+def _detect_cli(command: str) -> bool:
+    """Check if a CLI command is available on PATH."""
+    return shutil.which(command) is not None
+
+
+def _detect_available_engines() -> dict[str, bool]:
+    """Detect which CLI engines are installed locally."""
+    return {
+        "claude_code": _detect_cli("claude"),
+        "codex": _detect_cli("codex"),
+        "gemini": _detect_cli("gemini-cli"),
+        "anthropic": True,  # Always available (just needs API key)
+    }
 
 
 class CLISetupWizard:
@@ -60,16 +105,25 @@ class CLISetupWizard:
         # Preflight checks
         await self._run_preflight()
 
-        # Anthropic API key
-        api_key = await self._ask_api_key()
+        # Step 1: Engine selection
+        engine = self._ask_engine()
 
-        # Team count
+        # Step 2: API key (only for anthropic engine)
+        api_key = ""
+        if engine == "anthropic":
+            api_key = await self._ask_api_key()
+        else:
+            info = ENGINE_INFO[engine]
+            print(f"\nUsing {info['name']} engine — no API key needed.")
+            print(f"Authentication: {info['auth_hint']}\n")
+
+        # Step 3: Team count
         num_teams = self._ask_team_count()
 
         # Collect team configurations
         teams: list[TeamSetup] = []
         for i in range(num_teams):
-            team = await self._ask_team(i + 1, num_teams)
+            team = await self._ask_team(i + 1, num_teams, engine)
             teams.append(team)
 
         # Generate configs and .env
@@ -102,14 +156,72 @@ class CLISetupWizard:
 
         print("Pre-flight checks passed!\n")
 
+    def _ask_engine(self) -> str:
+        """Ask which PM engine to use, with local CLI detection."""
+        print("Step 1: PM Engine Selection")
+        print("-" * 40)
+
+        available = _detect_available_engines()
+
+        print("\nDetected CLI tools:")
+        for key, installed in available.items():
+            if key == "anthropic":
+                continue
+            info = ENGINE_INFO[key]
+            status = "FOUND" if installed else "not found"
+            print(f"  {info['name']:15s} ({info['command']}) ... {status}")
+
+        print("\nAvailable engines:")
+        engines = ["claude_code", "codex", "gemini", "anthropic"]
+        for i, key in enumerate(engines, 1):
+            info = ENGINE_INFO[key]
+            marker = " *" if available.get(key) and key != "anthropic" else ""
+            print(f"  {i}. {info['name']}{marker}")
+
+        # Default to first available CLI engine
+        default_engine = "claude_code"
+        for key in ["claude_code", "codex", "gemini"]:
+            if available[key]:
+                default_engine = key
+                break
+
+        default_idx = engines.index(default_engine) + 1
+
+        while True:
+            choice = self._input(f"\nChoose engine (1-4, default: {default_idx}): ").strip()
+            if not choice:
+                engine = default_engine
+                break
+            try:
+                idx = int(choice)
+                if 1 <= idx <= 4:
+                    engine = engines[idx - 1]
+                    break
+                print("Please enter 1-4.")
+            except ValueError:
+                print("Please enter a valid number.")
+
+        info = ENGINE_INFO[engine]
+
+        # Warn if CLI not found
+        if engine != "anthropic" and not available[engine]:
+            print(f"\nWarning: '{info['command']}' not found on PATH.")
+            print(f"Install: {info['install']}")
+            proceed = self._input("Continue anyway? (y/N): ").strip().lower()
+            if proceed != "y":
+                sys.exit(1)
+
+        print(f"\nEngine: {info['name']}\n")
+        return engine
+
     async def _ask_api_key(self) -> str:
         """Ask for and validate the Anthropic API key."""
-        print("Step 1: Anthropic API Key")
+        print("Step 2: Anthropic API Key")
         print("-" * 40)
 
         api_key = self._getpass("Enter your Anthropic API key: ").strip()
         if not api_key:
-            print("API key is required.")
+            print("API key is required for anthropic engine.")
             sys.exit(1)
 
         # Basic format validation
@@ -121,7 +233,8 @@ class CLISetupWizard:
 
     def _ask_team_count(self) -> int:
         """Ask how many teams to configure."""
-        print("Step 2: Team Configuration")
+        step = "Step 2" if True else "Step 3"  # Dynamic based on engine
+        print(f"{step}: Team Configuration")
         print("-" * 40)
 
         while True:
@@ -136,7 +249,7 @@ class CLISetupWizard:
             except ValueError:
                 print("Please enter a valid number.")
 
-    async def _ask_team(self, index: int, total: int) -> TeamSetup:
+    async def _ask_team(self, index: int, total: int, engine: str) -> TeamSetup:
         """Collect configuration for one team."""
         prefix = f"Team {index}/{total}" if total > 1 else "Team"
         print(f"\n{prefix} Setup")
@@ -177,6 +290,7 @@ class CLISetupWizard:
             bot_token=bot_token,
             group_chat_id=group_chat_id,
             org_id=org_id,
+            engine=engine,
         )
 
     async def _validate_bot_token(self, token: str) -> tuple[bool, str]:
@@ -288,7 +402,7 @@ class CLISetupWizard:
             org_name=team.name,
             telegram=TelegramOrgConfig(group_chat_id=team.group_chat_id),
             agents=agent_entries,
-            pm=PMConfig(),
+            pm=PMConfig(engine=team.engine),
             workspace_path="./workspace",
         )
 
@@ -325,12 +439,17 @@ class CLISetupWizard:
         """Generate .env file content."""
         lines = [
             "# AI Mesh Configuration",
-            f"# Generated by CLI Setup Wizard",
-            "",
-            "# Anthropic",
-            f"ANTHROPIC_API_KEY={api_key}",
+            "# Generated by CLI Setup Wizard",
             "",
         ]
+
+        # Only include API key if provided (anthropic engine)
+        if api_key:
+            lines.extend([
+                "# Anthropic",
+                f"ANTHROPIC_API_KEY={api_key}",
+                "",
+            ])
 
         if len(teams) == 1:
             team = teams[0]
@@ -359,10 +478,12 @@ class CLISetupWizard:
 
     def _print_completion(self, teams: list[TeamSetup]) -> None:
         """Print setup completion message."""
+        engine_name = ENGINE_INFO[teams[0].engine]["name"]
         print("\n" + "=" * 60)
         print("  Setup Complete!")
         print("=" * 60)
         print()
+        print(f"  Engine: {engine_name}")
         for team in teams:
             print(f"  Team: {team.name}")
             print(f"    Config: orgs/{team.org_id}/config.yaml")
@@ -370,7 +491,7 @@ class CLISetupWizard:
         print()
         print("  .env file generated.")
         print()
-        print("  Run 'aimesh' to start the bot.")
+        print("  Run 'python -m aimesh.main' to start.")
         print()
 
 

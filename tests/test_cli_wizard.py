@@ -2,7 +2,10 @@
 
 from unittest.mock import AsyncMock, MagicMock, patch
 
-from aimesh.cli.wizard import CLISetupWizard, TeamSetup, _sanitize_org_id
+from aimesh.cli.wizard import (
+    CLISetupWizard, TeamSetup, _sanitize_org_id,
+    _detect_cli, _detect_available_engines,
+)
 from aimesh.config import AgentEntry, OrgConfig
 
 
@@ -207,3 +210,100 @@ def test_ask_team_count_valid():
     wizard = CLISetupWizard(input_fn=lambda _: "3")
     count = wizard._ask_team_count()
     assert count == 3
+
+
+# --- Engine detection and selection tests ---
+
+
+def test_detect_cli_finds_python():
+    """_detect_cli finds python3 which should always be available."""
+    assert _detect_cli("python3") is True
+
+
+def test_detect_cli_missing_command():
+    """_detect_cli returns False for nonexistent command."""
+    assert _detect_cli("nonexistent-cli-tool-xyz") is False
+
+
+def test_detect_available_engines():
+    """_detect_available_engines returns dict with all engine keys."""
+    result = _detect_available_engines()
+    assert "claude_code" in result
+    assert "codex" in result
+    assert "gemini" in result
+    assert "anthropic" in result
+    assert result["anthropic"] is True  # Always available
+
+
+def test_team_setup_engine_default():
+    """TeamSetup defaults to claude_code engine."""
+    team = TeamSetup(
+        name="T", purpose="P", bot_token="tok",
+        group_chat_id=-100, org_id="t",
+    )
+    assert team.engine == "claude_code"
+
+
+def test_team_setup_engine_codex():
+    """TeamSetup accepts codex engine."""
+    team = TeamSetup(
+        name="T", purpose="P", bot_token="tok",
+        group_chat_id=-100, org_id="t", engine="codex",
+    )
+    assert team.engine == "codex"
+
+
+def test_generate_org_config_with_engine():
+    """Generated OrgConfig respects team engine selection."""
+    wizard = CLISetupWizard()
+    team = TeamSetup(
+        name="Test", purpose="Testing", bot_token="tok",
+        group_chat_id=-100, org_id="test", engine="codex",
+    )
+    config = wizard._generate_org_config(team)
+    assert config.pm.engine == "codex"
+
+
+def test_generate_env_file_no_api_key():
+    """CLI engine skips ANTHROPIC_API_KEY in .env."""
+    wizard = CLISetupWizard()
+    teams = [TeamSetup(
+        name="T1", purpose="P1", bot_token="tok1",
+        group_chat_id=-100, org_id="t1", engine="claude_code",
+    )]
+    env = wizard._generate_env_file(teams, "")
+
+    assert "ANTHROPIC_API_KEY" not in env
+    assert "TELEGRAM_BOT_TOKEN=tok1" in env
+
+
+def test_generate_env_file_with_api_key():
+    """Anthropic engine includes ANTHROPIC_API_KEY in .env."""
+    wizard = CLISetupWizard()
+    teams = [TeamSetup(
+        name="T1", purpose="P1", bot_token="tok1",
+        group_chat_id=-100, org_id="t1", engine="anthropic",
+    )]
+    env = wizard._generate_env_file(teams, "sk-key-123")
+
+    assert "ANTHROPIC_API_KEY=sk-key-123" in env
+
+
+def test_ask_engine_default_selection():
+    """Empty input selects default engine."""
+    wizard = CLISetupWizard(input_fn=lambda _: "")
+    with patch("aimesh.cli.wizard._detect_available_engines", return_value={
+        "claude_code": True, "codex": False, "gemini": False, "anthropic": True,
+    }):
+        engine = wizard._ask_engine()
+    assert engine == "claude_code"
+
+
+def test_ask_engine_codex_selection():
+    """Input '2' selects codex engine."""
+    wizard = CLISetupWizard(input_fn=lambda _: "2")
+    with patch("aimesh.cli.wizard._detect_available_engines", return_value={
+        "claude_code": True, "codex": True, "gemini": False, "anthropic": True,
+    }):
+        engine = wizard._ask_engine()
+    assert engine == "codex"
