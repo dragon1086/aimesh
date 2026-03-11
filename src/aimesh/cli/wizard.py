@@ -70,9 +70,10 @@ class TeamSetup:
 
 
 def _sanitize_org_id(name: str) -> str:
-    """Convert team name to a valid org_id (same logic as Telegram wizard)."""
+    """Convert team name to a valid ASCII org_id for use as directory name."""
     org_id = name.lower().replace(" ", "-").replace("_", "-")
-    return "".join(c for c in org_id if c.isalnum() or c == "-")
+    # Only keep ASCII alphanumeric and hyphens (no unicode in file paths)
+    return "".join(c for c in org_id if c.isascii() and (c.isalnum() or c == "-"))
 
 
 def _detect_cli(command: str) -> bool:
@@ -261,12 +262,15 @@ class CLISetupWizard:
         print(f"\n{prefix} Setup")
         print("-" * 40)
 
-        # Team name
-        name = self._input("Team name: ").strip()
-        if not name:
-            name = f"team-{index}"
-
-        org_id = _sanitize_org_id(name)
+        # Team name (must produce a valid ASCII org_id)
+        while True:
+            name = self._input("Team name (English, e.g., 'global'): ").strip()
+            if not name:
+                name = f"team-{index}"
+            org_id = _sanitize_org_id(name)
+            if org_id:
+                break
+            print("Team name must contain at least one ASCII letter or number.")
 
         # Team purpose (becomes soul.md)
         purpose = self._input("Team purpose/direction (e.g., 'Build a SaaS product'): ").strip()

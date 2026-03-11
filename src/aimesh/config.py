@@ -10,7 +10,7 @@ from pydantic_settings import BaseSettings
 class MeshSettings(BaseSettings):
     """AI Mesh configuration loaded from environment variables."""
 
-    model_config = {"env_file": ".env", "env_file_encoding": "utf-8"}
+    model_config = {"env_file": ".env", "env_file_encoding": "utf-8", "extra": "ignore"}
 
     # Telegram
     telegram_bot_token: str = Field(description="Telegram bot token from @BotFather")

@@ -14,7 +14,7 @@ def test_sanitize_org_id_basic():
     assert _sanitize_org_id("My Team") == "my-team"
     assert _sanitize_org_id("Team_One") == "team-one"
     assert _sanitize_org_id("team!@#123") == "team123"
-    assert _sanitize_org_id("한국팀") == "한국팀"
+    assert _sanitize_org_id("한국팀") == ""  # Non-ASCII stripped
 
 
 def test_sanitize_org_id_empty():
